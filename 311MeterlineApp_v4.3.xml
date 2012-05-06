@@ -1,0 +1,764 @@
+<vxml version="2.1" 
+xmlns="http://www.w3.org/2001/vxml"
+xmlns:voxeo="http://community.voxeo.com/xmlns/vxml" xml:lang="en-us"> 
+<meta name="maintainer" content="mshaw@potomacintegration.com"/>
+    
+<property name="inputmodes" value="dtmf"/>
+
+<var name="response" expr="new XML()"/>
+<var name="webServerURI" expr="'parkingmeterproxy.php'"/>
+<var name="transferDest" expr="'sip:2023733998@10.95.5.4'"/>
+<var name="transferCallerID" expr="'2027157447'"/>
+<var name="smsURI" expr="'sms_sendv2.php'"/>
+<var name="to" expr="session.callerid"/>
+<var name="trouble" expr="'1'"/>
+<var name="audiodir" expr="'http://localhost:9990/audio/'"/>
+
+<!-- Version 4.3 -->
+<!-- Author Mick Shaw -->
+<!-- Date 05/03/2012 -->
+
+<!-- ###########Version-4.3 Update:############## 
+
+Removed username password and api_id from the sms_send variable namelist.  
+It's didn't make since to pass these values.It made better since to statically 
+assign these values in the sms_send script so that the variables could be set 
+based on whether the clickatell balance is too low.  If the balance is too low, 
+we will set a new api-id and username and password.  All of this should be 
+done in the sms_send script 
+
+################Version-4.3 END################## -->
+
+
+<!-- ###########Version-4.2 Update:############## 
+
+Modified SMS to interface to Clickatell SMS HTTP API.
+
+################Version-4.2 END################## -->
+
+
+<!-- ###########Version-4.1 Update:############## 
+
+converted all audio attributes from src to expr and assigned new variable for 
+audio path. 
+
+################Version-4.1 END################## -->
+
+<!-- ###########Version-4   Update:############## 
+
+Referencing TTS-to-WAV javascript for 'session.callerid' playback when reading 
+the phone number back prior to texting the service-ID. 
+
+################Version-4 END#################### -->
+
+
+<!-- ###########Version-3   Update:############## 
+
+In lieu of TTS, I've added an English and Spanish TTS-to-WAV javascript that 
+will convert a string to an array which will allow each digit to be called 
+independently and associated with  custom prompts.  This should eliminate 
+the need for the pauses that were added in the Version 2, but we'll keep the 
+cleanString Function.
+
+################Version-3 END#################### -->
+
+<!-- ###########Version-2   Update:############## 
+
+The service ID needed pauses to slow TTS play-back, but now I need to convert 
+service-ID to proper format for SMS confirmations: from(1...0...0...0...1...2...3...4...5...6)
+to (10-00123456) the cleanString function was added to remove the '....' from the XML response
+
+################Version-2 END#################### -->
+  
+<script>
+        <![CDATA[
+          function cleanString(number)
+          {
+            var srvID = number;
+			var prehyphen;
+			var posthyphen;
+			var hyphen = "-";
+            {
+              srvID = srvID.replace(/\.\.\.\./gi, "");
+              prehyphen = srvID.substring(0,2);
+			  posthyphen = srvID.substring(2,10);
+			  srvID = prehyphen + hyphen + posthyphen;
+			}
+			
+            return srvID;
+          }
+        ]]>
+</script>		
+
+<form id="welcomeMsg">	
+	<block>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_one.wav'">  
+					Thank you for calling the Parking Meter Service Request Line.
+				</audio>
+			</prompt>
+	</block>
+	
+	<field name="menu">
+		<nomatch count="1"> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_two.wav'">
+					Sorry, please press 1 or 2.
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_two.wav'">
+					Lo sentimos, por favor presione uno o dos. 
+				</audio>
+			</prompt>
+		</nomatch> 
+		<nomatch count="2"> 
+			<prompt xml:lang="en-us"> 
+				<audio expr="audiodir+'prompt_three.wav'">
+					Please try one of the available option, 1 or 2. 
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us"> 
+				<audio expr="audiodir+'sp_prompt_three.wav'">
+					Por favor seleccione una de las siguientes opciones, uno o dos.
+				</audio>
+			</prompt>
+		</nomatch> 
+		<nomatch count="3"> 
+			<prompt xml:lang="en-us"> 
+				<audio expr="audiodir+'prompt_four.wav'">
+					Sorry I am having trouble, I must say goodbye.
+				</audio>
+			</prompt>
+	  
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_four.wav'">
+					Lo siento, estoy teniendo problemas, tengo que decir adios 
+				</audio>
+			</prompt>
+		<disconnect/>
+		</nomatch> 
+		<noinput count="1">
+			<prompt xml:lang="en-us"> 
+				<audio expr="audiodir+'prompt_five.wav'">
+					I did not hear anything.
+				</audio>
+			</prompt>
+	  		<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_five.wav'">
+					No he oido nada
+				</audio>
+			</prompt>
+		</noinput>
+		<noinput count="2">
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_six.wav'">
+					Sorry, I did not hear anything.
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_six.wav'">
+					lo siento, no he oido nada 
+				</audio>
+			</prompt>
+		</noinput>
+		<noinput count="3">
+			<prompt xml:lang="en-us">  
+				<audio expr="audiodir+'prompt_seven.wav'">
+					Sorry, I did not hear anything, Goodbye
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_seven.wav'">
+					lo siento, no he oido nada, adios 
+				</audio>
+			</prompt>
+		<disconnect/>
+		</noinput>
+	
+		<grammar xmlns="http://www.w3.org/2001/06/grammar" xml:lang="en-US"
+                    root = "MYRULE" mode="dtmf">
+			<rule id="MYRULE">
+				<one-of>
+					<item>1<tag>out.menu="one";</tag> </item>
+					<item>2<tag>out.menu="two";</tag> </item>
+					<item>3<tag>out.menu="two";</tag> </item>
+					<item>4<tag>out.menu="one";</tag> </item>
+					<item>5<tag>out.menu="two";</tag> </item>
+					<item>6<tag>out.menu="one";</tag> </item>
+					<item>7<tag>out.menu="one";</tag> </item>
+				</one-of>
+			</rule>
+		</grammar>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_eight.wav'">	
+					To continue this call in english please press 1 <break time="500ms"/>
+				</audio>  
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_eight.wav'">	
+					Para continuar esta llamada en espanol por favor presione 2
+				</audio>  
+			</prompt>
+	
+		<filled>
+			<if cond="menu == 'two'">
+				<goto next="#spanishForm"/>
+			<else/>
+				<goto next="#englishForm"/>
+			</if>
+		</filled>
+		
+	</field>
+	
+</form>
+
+
+
+<form id="englishForm">
+  
+	<field name="meterid" type="digits?minlength=6;maxlength=6">
+		<noinput count="1">
+			<prompt xml:lang="en-us">  
+				<audio expr="audiodir+'prompt_five.wav'">
+					I did not hear anything 
+				</audio>
+			</prompt>
+			<reprompt/>
+		</noinput>
+		<noinput count="2">
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_six.wav'">
+					Sorry, I did not hear anything 
+				</audio>
+			</prompt>
+			<reprompt/>
+		</noinput>
+        <noinput count="3">
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_seven.wav'">
+					Sorry, I did not hear anything, Goodbye. 
+				</audio>
+			</prompt>
+			<disconnect/>
+		</noinput>
+		<nomatch count="1"> 
+			<prompt xml:lang="en-us">
+			<audio expr="audiodir+'prompt_nine.wav'">
+					I am sorry, the meter number you entered is not valid
+				</audio>
+			</prompt> 
+			<reprompt/>
+		</nomatch> 
+		<nomatch count="2"> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_nine.wav'">
+					I am sorry, the meter number you entered is not valid
+				</audio>
+			</prompt> 
+			<reprompt/>
+		</nomatch> 
+		<nomatch count="3"> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_ten.wav'">
+					I am sorry, please allow me to transfer you
+				</audio>
+			</prompt> 
+			<goto next="#transfer"/>
+		</nomatch> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_eleven.wav'">
+					Now, Please enter the 6 digit number located at the top of the parking meter.
+				</audio>
+			</prompt>
+
+		<filled>
+			<assign name="meterVar" expr="meterid"/>
+			<log expr="'**********' + meterVar"/>
+		</filled>
+
+	</field>
+
+	<field name="cardinalDir">
+		<grammar xmlns="http://www.w3.org/2001/06/grammar" xml:lang="en-US"
+                     root = "MYRULE" mode="dtmf">
+			<rule id="MYRULE">
+				<one-of>
+					<item>1<tag>out.cardinalDir="NW";</tag> </item>
+					<item>2<tag>out.cardinalDir="NE";</tag> </item>
+					<item>3<tag>out.cardinalDir="SW";</tag> </item>
+					<item>4<tag>out.cardinalDir="SE";</tag> </item>
+				</one-of>
+			</rule>
+		</grammar>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_twelve.wav'">
+					Please press 1 for North West, Press 2 for North East, Press 3 for South West, or press 4 for South East.
+				</audio>
+			</prompt>
+		<filled>
+		<!--Capture Quadrant and add it as a suffix to meterid  -->
+			<assign name="meterid" expr="meterVar+cardinalDir"/>
+			<log expr="'**********' + meterid"/>
+		</filled>
+	</field>		
+		<field name="cardinaltrbl">
+		<grammar xmlns="http://www.w3.org/2001/06/grammar" xml:lang="en-US"
+                     root = "TROUBLERULE" mode="dtmf">
+			<rule id="TROUBLERULE">
+				<one-of>
+					<item>1<tag>out.cardinaltrbl="COISL001";</tag> </item>
+					<item>2<tag>out.cardinaltrbl="MEDIOUOR";</tag> </item>
+					<item>3<tag>out.cardinaltrbl="DONOREMO";</tag> </item>
+					<item>4<tag>out.cardinaltrbl="METHE001";</tag> </item>
+				    <item>5<tag>out.cardinaltrbl="GRAFF001";</tag> </item>
+					<item>6<tag>out.cardinaltrbl="OTHREPRE";</tag> </item>
+				</one-of>
+			</rule>
+		</grammar>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_sixteen.wav'">
+					Now, Please select from one of the following trouble descriptions.<break time="500ms"/>
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_seventeen.wav'">
+					Press one if the coin slot is jammed.<break time="500ms"/>
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_eighteen.wav'">
+					Press two if the display shows fail or out-of-order.<break time="500ms"/>
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_nineteen.wav'">
+					Press three if the meter did not give you time for your coin.<break time="500ms"/>
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_twenty.wav'">
+					Press four if the meter-head is missing.<break time="500ms"/>
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				 <audio expr="audiodir+'prompt_twentyone.wav'">
+					Press five for graffiti.<break time="500ms"/>
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'prompt_twentytwo.wav'">
+					Press six for all other damages.<break time="500ms"/>
+				</audio>
+			</prompt>
+     	<filled>
+			<assign name="trouble" expr="cardinaltrbl"/>
+			<log expr="'**********' + trouble"/>
+			<data srcexpr="webServerURI" namelist="meterid trouble to" name="serviceID" ecmaxmltype="e4x"/>
+			<assign name="response" expr="serviceID"/>
+			<assign name="serviceID" expr="response.value"/>
+			<log expr="'**********' + serviceID"/>
+				<if cond="serviceID == 'badFetch'">
+					<prompt xml:lang="en-us"> 
+						<audio expr="audiodir+'prompt_thirteen.wav'">
+							We are having trouble processing your request, please let me transfer you
+						</audio>
+					</prompt>
+					<goto next="#transfer"/>
+				<else/>	
+					<prompt xml:lang="en-us"> 
+						<audio expr="audiodir+'prompt_fourteen.wav'">
+							Your service ID is
+						</audio>
+					</prompt>
+						<var name="myField" expr="serviceID"/>
+						<log expr="'**********' + myField"/>
+						<script src="ttsToWav.js"/>
+   						<foreach item="convert" array="arrayEnglishField"> 
+     					<log expr="'***** arrayEnglishField = ' + arrayEnglishField"/>
+     					<prompt bargein="false">
+       						<audio expr="convert"/>
+      						  <break time="250ms"/>
+      					</prompt> 
+   						</foreach>
+				</if>
+		</filled>
+		
+	</field>
+   
+	<field name="sms_request">
+		<nomatch count="1"> 
+			<prompt xml:lang="en-us">
+			<audio expr="audiodir+'prompt_twentythree.wav'">
+						Sorry, please press 1 if you would like a text confirmation or 2 to hear your Service ID again.
+			</audio>
+			</prompt>
+		</nomatch>
+		<nomatch count="2"> 
+			<prompt xml:lang="en-us"> 
+			<audio expr="audiodir+'prompt_twentyfour.wav'">
+						Please try one of the available option, 1 to receive a text confirmation or 2 to hear your Service ID again.
+			</audio>
+			</prompt>		
+		</nomatch> 
+		<noinput count="1">
+			<prompt xml:lang="en-us">
+			 <audio expr="audiodir+'prompt_twentyfive.wav'">
+						I did not hear anything. Please press 1 if you would like a text confirmation or 2 to hear your Service ID again.
+			</audio>
+			</prompt>
+		</noinput>
+		<noinput count="2">
+			<prompt xml:lang="en-us">
+			<audio expr="audiodir+'prompt_twentyfive.wav'">
+						I did not hear anything. Please press 1 if you would like a text confirmation or 2 to hear your Service ID again.
+			</audio>
+			</prompt>
+		</noinput>
+		
+		<grammar xmlns="http://www.w3.org/2001/06/grammar" xml:lang="en-US"
+                    root = "MYRULE" mode="dtmf">
+			<rule id="MYRULE">
+				<one-of>
+					<item>1<tag>out.sms_request="one";</tag> </item>
+					<item>2<tag>out.sms_request="two";</tag> </item>
+				</one-of>
+			</rule>
+		</grammar>
+		
+			<prompt xml:lang="en-us">
+			<audio expr="audiodir+'prompt_twentysix.wav'">
+					To receive a text confirmation please press 1.  Or press 2 to hear your service ID again<break time="500ms"/>
+			</audio>
+			</prompt>
+		
+		<filled>
+			<assign name="meterid" expr="meterVar+cardinalDir"/>
+			<log expr="'**********' + meterid"/>
+			<assign name="serviceID" expr="response.value"/>
+			<var name="sID" expr="serviceID"/>
+			<assign name="text" expr="'Your Service Request ID for Parking Meter ' + meterid +' is:  ' + cleanString(sID)"/>
+			
+				<if cond="sms_request == 'one'">					 
+						<prompt xml:lang="en-us"> 
+							<audio expr="audiodir+'prompt_twentyseven.wav'">
+								Okay, I will send a text confirmation to
+							</audio>
+						</prompt>
+						<var name="myField" expr="session.callerid"/>
+						<log expr="'**********' + myField"/>
+						<script src="ttsToWav.js"/>
+   						<foreach item="convert" array="arrayEnglishField"> 
+     					<log expr="'***** arrayEnglishField = ' + arrayEnglishField"/>
+     					<prompt bargein="false">
+       						<audio expr="convert"/>
+      						  <break time="100ms"/>
+      					</prompt> 
+   						</foreach>
+						<prompt xml:lang="en-us">
+							<audio expr="audiodir+'prompt_twentyeight.wav'">
+								You should receive your text confirmation within five minutes.  Thank you for your report.
+							</audio>
+						</prompt>
+						<data srcexpr="smsURI" namelist="to text" name="smsResponse" ecmaxmltype="e4x"/> 
+				<else/>
+						<prompt xml:lang="en-us"> 
+							<audio expr="audiodir+'prompt_fourteen.wav'">
+								Your service ID is
+							</audio>
+						</prompt>
+						<var name="myField" expr="serviceID"/>
+						<log expr="'**********' + myField"/>
+						<script src="ttsToWav.js"/>
+   						<foreach item="convert" array="arrayEnglishField"> 
+     					<log expr="'***** arrayEnglishField = ' + arrayEnglishField"/>
+     					<prompt bargein="false">
+       						<audio expr="convert"/>
+      						  <break time="250ms"/>
+      					</prompt> 
+   						</foreach>
+						<prompt xml:lang="en-us">
+							<audio expr="audiodir+'prompt_fifteen.wav'">
+								Thank you for your report
+							</audio>
+						</prompt>
+				</if>
+		</filled>
+	</field>
+ </form>
+
+<form id="spanishForm">
+ 
+	<field name="meterid" type="digits?minlength=6;maxlength=6">
+		<noinput count="1">
+			<prompt xml:lang="en-us">  
+				<audio expr="audiodir+'sp_prompt_five.wav'">
+					No he oido nada.
+				</audio>
+			</prompt>
+			<reprompt/>
+		</noinput>
+		<noinput count="2">
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_six.wav'">
+					Lo sentimos, no he oido nada 
+				</audio>
+			</prompt>
+			<reprompt/>
+		</noinput>
+        <noinput count="3">
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_seven.wav'">
+					Lo sentimos, no he oido nada, adios 
+				</audio>
+			</prompt>
+			<disconnect/>
+		</noinput>
+		<nomatch count="1"> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_nine.wav'">
+					Lo siento, el numero de parquimetro no es valido.
+				</audio>
+			</prompt> 
+			<reprompt/>
+		</nomatch> 
+        <nomatch count="2"> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_nine.wav'">
+					Lo siento, el numero de parquimetro no es valido.
+				</audio>
+			</prompt> 
+			<reprompt/>
+		</nomatch> 
+        <nomatch count="3"> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_ten.wav'">
+					Lo siento, permitame transferirlo
+				</audio>
+			</prompt> 
+			<goto next="#transfer"/>
+		</nomatch> 
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_eleven.wav'">
+					Ahora, por favor, introduzca el numero de 6 digitos situado en la parte superior del parquimetro.
+			</audio>
+			</prompt>
+		<filled>
+			<assign name="meterVar" expr="meterid"/>
+			<log expr="'**********' + meterVar"/>
+		</filled>
+	</field>
+	<field name="cardinalDir">
+		<grammar xmlns="http://www.w3.org/2001/06/grammar" xml:lang="en-US"
+                     root = "MYRULE" mode="dtmf">
+			<rule id="MYRULE">
+				<one-of>
+					<item>1<tag>out.cardinalDir="NW";</tag> </item>
+					<item>2<tag>out.cardinalDir="NE";</tag> </item>
+					<item>3<tag>out.cardinalDir="SW";</tag> </item>
+					<item>4<tag>out.cardinalDir="SE";</tag> </item>
+				</one-of>
+			</rule>
+		</grammar>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_twelve.wav'">
+					Por favor presiones 1 para Noroeste, presione 2 para Noreste, presione 3 para Suroeste, o presione 4 para sureste.
+				</audio>
+			</prompt>
+		<filled>
+		<!--Capture Quadrant and add it as a suffix to meterid  -->
+			<assign name="meterid" expr="meterVar+cardinalDir"/>
+			<log expr="'**********' + meterid"/>
+		</filled>
+	</field>		
+		<field name="cardinaltrbl">
+		<grammar xmlns="http://www.w3.org/2001/06/grammar" xml:lang="en-us"
+                     root = "TROUBLERULE" mode="dtmf">
+			<rule id="TROUBLERULE">
+				<one-of>
+					<item>1<tag>out.cardinaltrbl="COISL001";</tag> </item>
+					<item>2<tag>out.cardinaltrbl="MEDIOUOR";</tag> </item>
+					<item>3<tag>out.cardinaltrbl="DONOREMO";</tag> </item>
+					<item>4<tag>out.cardinaltrbl="METHE001";</tag> </item>
+				    <item>5<tag>out.cardinaltrbl="GRAFF001";</tag> </item>
+					<item>6<tag>out.cardinaltrbl="OTHREPRE";</tag> </item>
+				</one-of>
+			</rule>
+		</grammar>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_sixteen.wav'">
+					Ahora, por favor seleccione una de las siguientes descripciones.<break time="500ms"/>  
+				</audio>
+			</prompt>
+     		<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_seventeen.wav'">
+					Presione uno si el orificio donde inserta la moneda esta danado o alguna moneda se atoro.<break time="500ms"/> 
+				</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_eighteen.wav'">
+					Presione dos si la pantalla dice falla o fuera de servicio.<break time="500ms"/>  
+					</audio>
+			</prompt>
+			<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_nineteen.wav'">
+					Presione tres si el parquimetro no registra el tiempo una vez que inserto la moneda.<break time="500ms"/>
+					</audio>
+			</prompt>
+     	<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_twenty.wav'">
+					Presione quatro si no se encuentra la parte superior del parquimetro.<break time="500ms"/>
+					</audio>
+			</prompt>
+     	<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_twentyone.wav'">
+					Presione cinco si el parquimetro tiene graffitis.<break time="500ms"/>
+					</audio>
+			</prompt>
+     	<prompt xml:lang="en-us">
+				<audio expr="audiodir+'sp_prompt_twentytwo.wav'">
+					Presione seis para otros danos.<break time="500ms"/>
+				</audio>
+			</prompt>
+     	
+     	<filled>
+			<assign name="trouble" expr="cardinaltrbl"/>
+			<log expr="'**********' + trouble"/>
+			<data srcexpr="webServerURI" namelist="meterid trouble to" name="serviceID" ecmaxmltype="e4x"/>
+			<assign name="response" expr="serviceID"/>
+			<assign name="serviceID" expr="response.value"/>
+				<if cond="serviceID == 'badFetch'">
+					<prompt xml:lang="en-us"> 
+						<audio expr="audiodir+'sp_prompt_thirteen.wav'">
+							Estamos teniendo problemas procesando su solicitud, por favor, permitame transferirlo
+						</audio>
+					</prompt>
+					<goto next="#transfer"/>
+				<else/>
+					<prompt xml:lang="en-us"> 
+						<audio expr="audiodir+'sp_prompt_fourteen.wav'">
+							Su numero de identificacion es 
+						</audio>
+					</prompt>
+					<var name="myField" expr="serviceID"/>
+						<log expr="'**********' + myField"/>
+						<script src="ttsToWav.js"/>
+   						<foreach item="convert" array="arraySpanishField"> 
+     					<log expr="'***** arraySpanishField = ' + arraySpanishField"/>
+     					<prompt bargein="false">
+       						<audio expr="convert"/>
+      						  <break time="250ms"/>
+      					</prompt> 
+   						</foreach>
+				</if>
+		</filled>
+    </field>
+    <field name="sms_request_es">
+       <nomatch count="1"> 
+            <prompt xml:lang="en-us">
+            	<audio expr="audiodir+'sp_prompt_twentythree.wav'">
+                       Lo siento, por favor presione uno si desea recibir confirmacion en un mensaje de texto o presione 2 si desea escuchar su numero de identificacion.
+               </audio>
+            </prompt>
+       </nomatch>
+       <nomatch count="2"> 
+            <prompt xml:lang="en-us">
+            <audio expr="audiodir+'sp_prompt_twentyfour.wav'"> 
+                        Por favor seleccione una de las siguientes opciones, 1 para recibir confirmacion en un mensaje de texto o 2 si desea volver a escuchar su numero de identificacion.
+            </audio>
+            </prompt>        
+        </nomatch> 
+        <noinput count="1">
+           <prompt xml:lang="en-us"> 
+            <audio expr="audiodir+'sp_prompt_twentyfive.wav'"> 
+                        No he oido nada. Por favor presione 1 si desea recibir confirmacion en un mensaje de texto o 2 para volver a escuchar su numero de identificacion.
+            </audio>
+            </prompt>
+       </noinput>
+       <noinput count="2">
+           <prompt xml:lang="en-us">
+           <audio expr="audiodir+'sp_prompt_twentyfive.wav'"> 
+                       No he oido nada. Por favor presione 1 si desea recibir confirmacion en un mensaje de texto o 2 para volver a escuchar su numero de identificacion.
+             </audio>
+            </prompt>
+       </noinput>
+       
+        <grammar xmlns="http://www.w3.org/2001/06/grammar" xml:lang="en-US"
+                   root = "MYRULE" mode="dtmf">
+           <rule id="MYRULE">
+               <one-of>
+                   <item>1<tag>out.sms_request_es="one";</tag> </item>
+                   <item>2<tag>out.sms_request_es="two";</tag> </item>
+               </one-of>
+           </rule>
+       </grammar>
+       
+            <prompt xml:lang="en-us">
+            <audio expr="audiodir+'sp_prompt_twentysix.wav'"> 
+                   Por favor presione 1 si desea recibir confirmacion en un mensaje de texto o 2 para volver a escuchar su numero de identificacion.<break time="500ms"/>
+           </audio>
+           </prompt>
+       
+        <filled>
+           <assign name="meterid" expr="meterVar+cardinalDir"/>
+           <log expr="'**********' + meterid"/>            
+           <assign name="serviceID" expr="response.value"/>
+           <var name="sID" expr="serviceID"/>
+           <assign name="text" expr="'Your Service Request ID for Parking Meter ' + meterid +' is:' + cleanString(sID)"/>
+           
+                <if cond="sms_request_es == 'one'">
+                      <data srcexpr="smsURI" namelist="to text" name="smsResponse" ecmaxmltype="e4x"/>  
+                      <prompt xml:lang="en-us"> 
+                            <audio expr="audiodir+'sp_prompt_twentyseven.wav'">
+                               Muy bien, enviare confirmacion en un mensaje de texto al
+                            </audio>
+                       </prompt>
+                       <var name="myField" expr="session.callerid"/>
+						<log expr="'**********' + myField"/>
+						<script src="ttsToWav.js"/>
+   						<foreach item="convert" array="arraySpanishField"> 
+     					<log expr="'***** arraySpanishField = ' + arraySpanishField"/>
+     					<prompt bargein="false">
+       						<audio expr="convert"/>
+      						  <break time="100ms"/>
+      					</prompt> 
+   						</foreach>
+                       <prompt xml:lang="en-us">
+                           <audio expr="audiodir+'sp_prompt_twentyeight.wav'">
+                               Usted debe recibir su confirmacion en los siguientes 5 minutos. Gracias por su reporte.
+                            </audio>
+                       </prompt>
+               <else/>
+                       <prompt xml:lang="en-us"> 
+                            <audio expr="audiodir+'sp_prompt_fourteen.wav'">
+                               Su numero de identificacion es
+                            </audio>
+                       </prompt>
+                       <var name="myField" expr="serviceID"/>
+						<log expr="'**********' + myField"/>
+						<script src="Spanish_ttsToWav.js"/>
+   						<foreach item="convert" array="arraymyField"> 
+     					<log expr="'***** arraymyField = ' + arraymyField"/>
+     					<prompt bargein="false">
+       						<audio expr="convert"/>
+      						  <break time="250ms"/>
+      					</prompt> 
+   						</foreach>
+                       <prompt xml:lang="en-us">
+                           <audio expr="audiodir+'sp_prompt_fifteen.wav'">
+                               Gracias por su reporte
+                           </audio>
+                       </prompt>
+               </if>
+       </filled>
+   </field>  
+ </form>
+
+<form id="transfer">
+	<transfer name="agent" destexpr="transferDest" type="blind" voxeo:calleridexpr="transferCallerID">
+		<filled>
+			<log expr="'**********'+agent$.duration"/>
+		</filled>
+	</transfer>
+</form>
+</vxml>
