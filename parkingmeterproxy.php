@@ -2,7 +2,7 @@
 $meterid  = $_REQUEST['meterid'];
 $trouble =  $_REQUEST['trouble'];
 $to = $_REQUEST['to'];
-$baseURL = "http://octo-62czkn1.ojs.dcgov.priv/MeterRequest/MeterServiceSubmit.ashx?";
+$baseURL = "Open311-webservice.aspx";
 $apiKey = "Key1";
 $date = new DateTime();
 $catchfile = 'parkingmeterproxy.log';
