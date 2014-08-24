@@ -7,8 +7,8 @@ xmlns:voxeo="http://community.voxeo.com/xmlns/vxml" xml:lang="en-us">
 
 <var name="response" expr="new XML()"/>
 <var name="webServerURI" expr="'parkingmeterproxy.php'"/>
-<var name="transferDest" expr="'sip:2023733998@10.95.5.4'"/>
-<var name="transferCallerID" expr="'2027157447'"/>
+<var name="transferDest" expr="'sip:<Number>@<SIPAddress'"/>
+<var name="transferCallerID" expr="'<TransferAddress>'"/>
 <var name="smsURI" expr="'sms_sendv2.php'"/>
 <var name="to" expr="session.callerid"/>
 <var name="trouble" expr="'1'"/>
